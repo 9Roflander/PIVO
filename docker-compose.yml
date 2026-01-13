@@ -1,0 +1,173 @@
+networks:
+  bigdata-net:
+    driver: bridge
+
+services:
+  # ============= HDFS =============
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    hostname: namenode
+    networks:
+      - bigdata-net
+    ports:
+      - "9870:9870" # Web UI
+      - "9000:9000" # HDFS
+    environment:
+      - CLUSTER_NAME=pivo-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    hostname: datanode
+    networks:
+      - bigdata-net
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ============= HIVE =============
+  hive-metastore-db:
+    image: postgres:13
+    container_name: hive-metastore-db
+    networks:
+      - bigdata-net
+    environment:
+      - POSTGRES_USER=hive
+      - POSTGRES_PASSWORD=hive
+      - POSTGRES_DB=metastore
+    volumes:
+      - metastore_db:/var/lib/postgresql/data
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-metastore
+    hostname: hive-metastore
+    networks:
+      - bigdata-net
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870 hive-metastore-db:5432
+      - DB_DRIVER=postgres
+      - SERVICE_NAME=metastore
+    depends_on:
+      - namenode
+      - datanode
+      - hive-metastore-db
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  hive-server:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-server
+    hostname: hive-server
+    networks:
+      - bigdata-net
+    ports:
+      - "10000:10000" # HiveServer2
+      - "10002:10002" # Web UI
+    environment:
+      - SERVICE_PRECONDITION=hive-metastore:9083
+      - SERVICE_NAME=hiveserver2
+    depends_on:
+      - hive-metastore
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ============= KAFKA =============
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    hostname: zookeeper
+    networks:
+      - bigdata-net
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    hostname: kafka
+    networks:
+      - bigdata-net
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # ============= SPARK =============
+  spark-master:
+    image: apache/spark:3.5.1
+    container_name: spark-master
+    hostname: spark-master
+    networks:
+      - bigdata-net
+    ports:
+      - "8080:8080" # Web UI
+      - "7077:7077" # Master port
+    environment:
+      - SPARK_MODE=master
+    command: >
+      bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  spark-worker:
+    image: apache/spark:3.5.1
+    container_name: spark-worker
+    hostname: spark-worker
+    networks:
+      - bigdata-net
+    environment:
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    command: >
+      bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
+    depends_on:
+      - spark-master
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+volumes:
+  namenode_data:
+  datanode_data:
+  metastore_db:

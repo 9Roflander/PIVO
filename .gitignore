@@ -1,0 +1,24 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker volumes
+namenode_data/
+datanode_data/
+metastore_db/
+
+# Temp files
+*.tmp
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
