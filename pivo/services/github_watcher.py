@@ -10,6 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 from typing import List, Dict
+from pivo.ingest.hive_cataloger import get_tracked_repos_from_db
 
 # Config
 POLL_INTERVAL_SECONDS = 60
@@ -20,8 +21,14 @@ def get_tracked_repos() -> List[str]:
     """
     Get list of unique repo URLs from the database.
     """
-    # Default to the known PIVO repo for this demo
-    return ["https://github.com/9Roflander/PIVO"]
+    db_repos = get_tracked_repos_from_db()
+    
+    # Always include the known PIVO repo if not present
+    default_repo = "https://github.com/9Roflander/PIVO"
+    if default_repo not in db_repos:
+        db_repos.append(default_repo)
+        
+    return db_repos
 
 def get_remote_branches(repo_url: str) -> Dict[str, str]:
     """Get dictionary of {branch_name: commit_hash} for all remote heads."""

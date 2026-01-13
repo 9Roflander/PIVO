@@ -20,7 +20,7 @@ from pivo.config import Config
 from pivo.ingest.github_cloner import clone_repo, get_commit_metadata, get_recent_commits
 from pivo.ingest.hdfs_uploader import upload_to_hdfs
 from pivo.ingest.kafka_service import PivoKafkaProducer
-from pivo.ingest.hive_cataloger import check_snapshot_exists
+from pivo.ingest.hive_cataloger import check_snapshot_exists, track_repository
 
 
 def print_banner():
@@ -53,6 +53,9 @@ def ingest_single_commit(
         print("[2/4] Extracting commit metadata...")
         metadata = get_commit_metadata(local_path, repo_url)
         print(f"      Commit: {metadata.commit_hash[:7]} by {metadata.author}")
+        
+        # Register for tracking
+        track_repository(repo_url, metadata.repo_name, config)
         
         # Check if already exists
         if check_snapshot_exists(metadata.commit_hash, config):

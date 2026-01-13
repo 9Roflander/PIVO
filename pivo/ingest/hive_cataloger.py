@@ -44,10 +44,19 @@ def create_table(config: Config) -> bool:
         hdfs_path       TEXT
     )
     """
+    
+    create_tracked_sql = """
+    CREATE TABLE IF NOT EXISTS tracked_repos (
+        repo_url    TEXT PRIMARY KEY,
+        repo_name   TEXT,
+        last_polled TEXT
+    )
+    """
     try:
         with get_connection() as conn:
             conn.execute(create_sql)
-        print("[INFO] Metadata catalog ready (SQLite)")
+            conn.execute(create_tracked_sql)
+        print("[INFO] Metadata catalog and tracking store ready (SQLite)")
         return True
     except Exception as e:
         print(f"[ERROR] Failed to create table: {e}")
@@ -118,5 +127,29 @@ def get_all_snapshots(config: Config) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.execute("SELECT * FROM repo_snapshots")
             return [dict(row) for row in cursor.fetchall()]
+    except Exception:
+        return []
+def track_repository(repo_url: str, repo_name: str, config: Config) -> bool:
+    """
+    Register a repository for tracking in the database.
+    """
+    insert_sql = "INSERT OR REPLACE INTO tracked_repos (repo_url, repo_name) VALUES (?, ?)"
+    try:
+        create_table(config) # Ensure table exists
+        with get_connection() as conn:
+            conn.execute(insert_sql, (repo_url, repo_name))
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to track repo: {e}")
+        return False
+
+def get_tracked_repos_from_db() -> list[str]:
+    """
+    Get all tracked repository URLs.
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.execute("SELECT repo_url FROM tracked_repos")
+            return [row['repo_url'] for row in cursor.fetchall()]
     except Exception:
         return []

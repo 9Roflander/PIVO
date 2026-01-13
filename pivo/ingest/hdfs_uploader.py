@@ -19,27 +19,67 @@ def upload_to_hdfs(
 ) -> str:
     """
     Upload a local directory tree to HDFS using docker exec.
-    
-    Args:
-        local_path: Path to local repository
-        repo_name: Name of the repository
-        commit_hash: Commit hash for path organization
-        config: PIVO configuration
-    
-    Returns:
-        HDFS path where files were uploaded
+    Dual Ingest Strategy:
+    1. Git Bundle (full_backup.bundle) -> For full disaster recovery.
+    2. Raw Files (tarball extract) -> For AI analysis and diffing.
     """
     hdfs_base_path = f"/backups/{repo_name}/{commit_hash}"
+    bundle_name = "full_backup.bundle"
     
-    # Create tar archive of the repository (excluding .git)
+    # 1. Create HDFS Directory
+    subprocess.run(
+        ["docker", "exec", "namenode", "hdfs", "dfs", "-mkdir", "-p", hdfs_base_path],
+        check=True,
+        capture_output=True
+    )
+    
+    # --- Part A: Upload Git Bundle (Disaster Recovery) ---
+    try:
+        print("      📦 Creating Git Bundle (Full History)...")
+        # Create bundle covering all branches/tags
+        subprocess.run(
+            ["git", "bundle", "create", bundle_name, "--all"],
+            cwd=local_path,
+            check=True, 
+            capture_output=True
+        )
+        
+        # Copy to container
+        local_bundle = local_path / bundle_name
+        subprocess.run(
+            ["docker", "cp", str(local_bundle), f"namenode:/tmp/{bundle_name}"],
+            check=True,
+            capture_output=True
+        )
+        
+        # Put to HDFS
+        subprocess.run(
+            ["docker", "exec", "namenode", "hdfs", "dfs", "-put", "-f", f"/tmp/{bundle_name}", f"{hdfs_base_path}/{bundle_name}"],
+            check=True,
+            capture_output=True
+        )
+        
+        # Cleanup container temp file
+        subprocess.run(
+            ["docker", "exec", "namenode", "rm", f"/tmp/{bundle_name}"],
+            capture_output=True
+        )
+        print("      ✅ Bundle uploaded (DR ready)")
+        
+    except Exception as e:
+        print(f"      ⚠️ Bundle creation/upload warning: {e}")
+        # Continue to raw files even if bundle fails
+    
+    
+    # --- Part B: Upload Raw Files (Analysis) ---
+    # Create tar archive of the repository (excluding .git and bundle)
     with tempfile.NamedTemporaryFile(suffix='.tar', delete=False) as tmp_tar:
         tar_path = tmp_tar.name
     
     try:
-        # Create tar archive
         with tarfile.open(tar_path, "w") as tar:
             for item in os.listdir(local_path):
-                if item == ".git":
+                if item == ".git" or item == bundle_name:
                     continue
                 item_path = local_path / item
                 tar.add(item_path, arcname=item)
@@ -51,14 +91,7 @@ def upload_to_hdfs(
             capture_output=True
         )
         
-        # Create HDFS directory
-        subprocess.run(
-            ["docker", "exec", "namenode", "hdfs", "dfs", "-mkdir", "-p", hdfs_base_path],
-            check=True,
-            capture_output=True
-        )
-        
-        # Extract and upload to HDFS
+        # Extract and upload to HDFS via bash one-liner
         extract_and_upload_cmd = f"""
             cd /tmp && \
             rm -rf repo_extract && \
@@ -95,9 +128,13 @@ def upload_to_hdfs(
         return hdfs_base_path
         
     finally:
-        # Cleanup temp tar file
+        # Cleanup local temp tar
         if os.path.exists(tar_path):
             os.unlink(tar_path)
+        # Cleanup local bundle if it exists
+        local_bundle = local_path / bundle_name
+        if local_bundle.exists():
+            os.unlink(local_bundle)
 
 
 def list_hdfs_backups(config: Config) -> list[dict]:

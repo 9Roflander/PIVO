@@ -8,6 +8,7 @@ from .query_hive import query_hive
 from .file_diff import get_file_diff
 from .restore import submit_restore_job
 from .read_file import get_file_content
+from .ingest import ingest_repository
 
 # Gemini Tool Definitions using function declarations
 query_hive_func = types.FunctionDeclaration(
@@ -98,12 +99,36 @@ restore_func = types.FunctionDeclaration(
     )
 )
 
+ingest_func = types.FunctionDeclaration(
+    name="ingest_repository",
+    description="Backup a GitHub repository into the PIVO system for the first time or manually. This will clone the repo, upload all files to HDFS, create a disaster recovery bundle, and catalog the metadata. Use this when a user provides a NEW repository URL to track.",
+    parameters=types.Schema(
+        type="OBJECT",
+        properties={
+            "repo_url": types.Schema(
+                type="STRING",
+                description="The full GitHub URL of the repository (e.g. https://github.com/user/repo)"
+            ),
+            "commit_hash": types.Schema(
+                type="STRING",
+                description="Specific commit hash to backup (optional, defaults to HEAD)"
+            ),
+            "github_token": types.Schema(
+                type="STRING",
+                description="GitHub API Token for private repositories (optional)"
+            )
+        },
+        required=["repo_url"]
+    )
+)
+
 # Tool registry for Gemini
 TOOLS = [types.Tool(function_declarations=[
     query_hive_func,
     file_diff_func,
     read_file_func,
-    restore_func
+    restore_func,
+    ingest_func
 ])]
 
 # Function dispatch map
@@ -112,4 +137,5 @@ TOOL_FUNCTIONS = {
     "get_file_diff": get_file_diff,
     "get_file_content": get_file_content,
     "submit_restore_job": submit_restore_job,
+    "ingest_repository": ingest_repository,
 }
