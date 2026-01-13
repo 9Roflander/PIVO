@@ -72,7 +72,7 @@ services:
     environment:
       - SERVICE_NAME=hiveserver2
       - DB_DRIVER=postgres
-      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=hive
+      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://hive-metastore-db:5432/metastore -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=hive -Dhive.server2.thrift.bind.host=0.0.0.0 -Dhive.server2.transport.mode=binary -Dhive.server2.thrift.port=10000
       - IS_RESUME=true
     depends_on:
       hive-metastore-db:

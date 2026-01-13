@@ -19,14 +19,15 @@ from pathlib import Path
 from pivo.config import Config
 from pivo.ingest.github_cloner import clone_repo, get_commit_metadata, get_recent_commits
 from pivo.ingest.hdfs_uploader import upload_to_hdfs
-from pivo.ingest.hive_cataloger import create_table, insert_snapshot, check_snapshot_exists
+from pivo.ingest.kafka_service import PivoKafkaProducer
+from pivo.ingest.hive_cataloger import check_snapshot_exists
 
 
 def print_banner():
     """Print ingestion banner."""
     print("""
 ╔═══════════════════════════════════════════════════════════════╗
-║  PIVO Ingest - GitHub → HDFS/Hive Backup                      ║
+║  PIVO Ingest - GitHub → HDFS → Kafka (Producer)               ║
 ╚═══════════════════════════════════════════════════════════════╝
     """)
 
@@ -38,10 +39,7 @@ def ingest_single_commit(
     config: Config
 ) -> bool:
     """
-    Ingest a single commit from a repository.
-    
-    Returns:
-        True if successful
+    Ingest a single commit (Produce Event).
     """
     local_path = None
     
@@ -55,7 +53,6 @@ def ingest_single_commit(
         print("[2/4] Extracting commit metadata...")
         metadata = get_commit_metadata(local_path, repo_url)
         print(f"      Commit: {metadata.commit_hash[:7]} by {metadata.author}")
-        print(f"      Message: {metadata.commit_message[:50]}...")
         
         # Check if already exists
         if check_snapshot_exists(metadata.commit_hash, config):
@@ -71,19 +68,13 @@ def ingest_single_commit(
             config
         )
         
-        # Step 4: Catalog in Hive
-        print("[4/4] Cataloging in Hive...")
-        try:
-            create_table(config)
-            if insert_snapshot(metadata, hdfs_path, config):
-                print(f"      Successfully cataloged in Hive")
-            else:
-                print(f"      [WARN] Failed to insert into Hive (HDFS backup is safe)")
-        except Exception as e:
-            print(f"      [WARN] Hive cataloging skipped: {e} (HDFS backup is safe)")
+        # Step 4: Produce Kafka Event
+        print("[4/4] Sending Event to Kafka...")
+        producer = PivoKafkaProducer(config)
+        producer.connect()
+        producer.produce_commit_event(metadata, hdfs_path)
         
-        print(f"\n✅ Successfully backed up {metadata.repo_name}@{metadata.commit_hash[:7]}")
-        print(f"   HDFS: {hdfs_path}")
+        print(f"\n✅ Successfully backed up & queued {metadata.repo_name}@{metadata.commit_hash[:7]}")
         return True
         
     except Exception as e:
@@ -91,7 +82,6 @@ def ingest_single_commit(
         return False
     
     finally:
-        # Cleanup temp directory
         if local_path and local_path.exists():
             shutil.rmtree(local_path, ignore_errors=True)
 
@@ -100,49 +90,28 @@ def main():
     """Main entry point."""
     print_banner()
     
-    parser = argparse.ArgumentParser(
-        description="Import GitHub repositories into PIVO"
-    )
-    parser.add_argument(
-        "--repo", "-r",
-        required=True,
-        help="GitHub repository URL"
-    )
-    parser.add_argument(
-        "--commit", "-c",
-        default=None,
-        help="Specific commit hash (default: HEAD)"
-    )
-    parser.add_argument(
-        "--github-token", "-t",
-        default=None,
-        help="GitHub token for private repos"
-    )
-    parser.add_argument(
-        "--count", "-n",
-        type=int,
-        default=1,
-        help="Number of recent commits to backup"
-    )
+    parser = argparse.ArgumentParser(description="Import GitHub repositories into PIVO")
+    parser.add_argument("--repo", "-r", required=True, help="GitHub repository URL")
+    parser.add_argument("--commit", "-c", default=None, help="Specific commit hash")
+    parser.add_argument("--github-token", "-t", default=None, help="GitHub token")
+    parser.add_argument("--count", "-n", type=int, default=1, help="Commits to backup")
     
     args = parser.parse_args()
     
-    # Load configuration
     try:
         config = Config.from_env()
-        print(f"[CONFIG] HDFS: {config.hdfs_url}")
-        print(f"[CONFIG] Hive: {config.hive_host}:{config.hive_port}")
-        print()
     except ValueError as e:
         print(f"[ERROR] {e}")
         sys.exit(1)
     
     # Ingest
     if args.count > 1:
-        # Multiple commits
         print(f"[INFO] Backing up {args.count} recent commits...")
         local_path = clone_repo(args.repo, None, args.github_token)
         commits = get_recent_commits(local_path, args.repo, args.count)
+        
+        producer = PivoKafkaProducer(config)
+        producer.connect()
         
         success_count = 0
         for metadata in commits:
@@ -157,24 +126,13 @@ def main():
                 config
             )
             
-            try:
-                create_table(config)
-                insert_snapshot(metadata, hdfs_path, config)
-            except Exception as e:
-                print(f"      [WARN] Hive cataloging skipped: {e}")
-            
+            producer.produce_commit_event(metadata, hdfs_path)
             success_count += 1
         
         shutil.rmtree(local_path, ignore_errors=True)
-        print(f"\n✅ Backed up {success_count}/{len(commits)} commits")
+        print(f"\n✅ Queued {success_count}/{len(commits)} commits for cataloging")
     else:
-        # Single commit
-        success = ingest_single_commit(
-            args.repo,
-            args.commit,
-            args.github_token,
-            config
-        )
+        success = ingest_single_commit(args.repo, args.commit, args.github_token, config)
         sys.exit(0 if success else 1)
 
 

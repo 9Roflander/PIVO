@@ -102,6 +102,8 @@ def submit_restore_job(
         "--target-url", target_repo_url,
     ]
     
+    print(f"       ⚙️ Spark Command: {' '.join(cmd)}")
+    
     try:
         # Submit the job
         result = subprocess.run(

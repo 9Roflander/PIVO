@@ -6,6 +6,7 @@ import google.generativeai as genai
 from .query_hive import query_hive
 from .file_diff import get_file_diff
 from .restore import submit_restore_job
+from .read_file import get_file_content
 
 # Gemini Tool Definitions using function declarations
 query_hive_func = genai.protos.FunctionDeclaration(
@@ -46,6 +47,29 @@ file_diff_func = genai.protos.FunctionDeclaration(
     )
 )
 
+read_file_func = genai.protos.FunctionDeclaration(
+    name="get_file_content",
+    description="Read the full content of a specific file from HDFS. Use this to see what is currently in a file or when diff is unavailable. Requires repository name and file path.",
+    parameters=genai.protos.Schema(
+        type=genai.protos.Type.OBJECT,
+        properties={
+            "file_path": genai.protos.Schema(
+                type=genai.protos.Type.STRING,
+                description="Relative path of the file (e.g. 'docker-compose.yml')"
+            ),
+            "repo_name": genai.protos.Schema(
+                type=genai.protos.Type.STRING,
+                description="Name of the repository (e.g. 'PIVO')"
+            ),
+            "commit_hash": genai.protos.Schema(
+                type=genai.protos.Type.STRING,
+                description="Specific commit hash to read from (optional, defaults to latest)"
+            )
+        },
+        required=["file_path", "repo_name"]
+    )
+)
+
 restore_func = genai.protos.FunctionDeclaration(
     name="submit_restore_job",
     description="Restore a repository to a specific commit state and push it to a new GitHub location. This triggers a Spark job that reads the snapshot from HDFS and pushes to the target repository.",
@@ -77,6 +101,7 @@ restore_func = genai.protos.FunctionDeclaration(
 TOOLS = [genai.protos.Tool(function_declarations=[
     query_hive_func,
     file_diff_func,
+    read_file_func,
     restore_func
 ])]
 
@@ -84,5 +109,6 @@ TOOLS = [genai.protos.Tool(function_declarations=[
 TOOL_FUNCTIONS = {
     "query_hive": query_hive,
     "get_file_diff": get_file_diff,
+    "get_file_content": get_file_content,
     "submit_restore_job": submit_restore_job,
 }

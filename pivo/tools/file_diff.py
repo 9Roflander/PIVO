@@ -2,17 +2,26 @@
 Tool B: File Diff - Smart comparison of file versions in HDFS using Gemini
 """
 import difflib
+import subprocess
 from typing import Any
-from hdfs import InsecureClient
 import google.generativeai as genai
 
 from ..config import Config
 
 
-def read_hdfs_file(client: InsecureClient, path: str) -> str:
-    """Read a text file from HDFS."""
-    with client.read(path, encoding='utf-8') as reader:
-        return reader.read()
+def read_hdfs_file(path: str) -> str:
+    """Read a text file from HDFS using docker exec."""
+    try:
+        cmd = ["docker", "exec", "namenode", "hdfs", "dfs", "-cat", path]
+        print(f"       ⚙️ HDFS Command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        
+        if result.returncode != 0:
+            raise Exception(f"HDFS Error: {result.stderr}")
+            
+        return result.stdout
+    except subprocess.TimeoutExpired:
+        raise Exception("Timeout reading file from HDFS")
 
 
 def compute_diff(text_a: str, text_b: str, context_lines: int = 3) -> str:
@@ -40,18 +49,11 @@ def get_file_diff(
 ) -> dict[str, Any]:
     """
     Compare two file versions from HDFS and explain differences.
-    
-    1. Fetch both files from HDFS
-    2. Compute diff locally using difflib
-    3. Send diff snippets to Gemini for explanation
-    4. Return summary
     """
     try:
-        # Step 1: Connect to HDFS and fetch files
-        hdfs_client = InsecureClient(config.hdfs_url, user='root')
-        
-        content_a = read_hdfs_file(hdfs_client, file_path_a)
-        content_b = read_hdfs_file(hdfs_client, file_path_b)
+        # Step 1: Fetch both files from HDFS (via docker exec)
+        content_a = read_hdfs_file(file_path_a)
+        content_b = read_hdfs_file(file_path_b)
         
         # Step 2: Compute diff locally
         diff_text = compute_diff(content_a, content_b, context_lines)

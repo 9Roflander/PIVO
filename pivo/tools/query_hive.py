@@ -1,49 +1,50 @@
 """
 Tool A: Query Hive - Text-to-SQL for metadata queries using Gemini
+(Switched to SQLite backend for reliability)
 """
+import sqlite3
 from typing import Any
-from pyhive import hive
 import google.generativeai as genai
+from pathlib import Path
 
 from ..config import Config
 
-
-# Hive table schema for SQL generation
+# Schema for SQL generation
 REPO_SNAPSHOTS_SCHEMA = """
 Table: repo_snapshots
 Columns:
-  - commit_hash: STRING (PRIMARY KEY) - Git commit SHA
-  - repo_name: STRING - Name of the repository
-  - author: STRING - Commit author name
-  - author_email: STRING - Commit author email
-  - commit_message: STRING - Full commit message
-  - commit_timestamp: TIMESTAMP - When the commit was made
-  - files_changed: ARRAY<STRING> - List of file paths that were changed
-  - additions: INT - Lines added
-  - deletions: INT - Lines deleted
-  - branch: STRING - Branch name
-  - hdfs_path: STRING - Path to snapshot in HDFS
+  - commit_hash: TEXT (PRIMARY KEY) - Git commit SHA
+  - repo_name: TEXT - Name of the repository
+  - author: TEXT - Commit author name
+  - author_email: TEXT - Commit author email
+  - commit_message: TEXT - Full commit message
+  - commit_timestamp: TEXT - When the commit was made (ISO format)
+  - files_changed: TEXT - JSON list of file paths that were changed
+  - additions: INTEGER - Lines added
+  - deletions: INTEGER - Lines deleted
+  - branch: TEXT - Branch name
+  - hdfs_path: TEXT - Path to snapshot in HDFS
 
 Example queries:
-- SELECT * FROM repo_snapshots WHERE author = 'John' ORDER BY commit_timestamp DESC LIMIT 10
+- SELECT * FROM repo_snapshots WHERE author LIKE '%John%' ORDER BY commit_timestamp DESC LIMIT 10
 - SELECT commit_hash, commit_message FROM repo_snapshots WHERE commit_timestamp >= '2024-01-01'
 """
+
+def get_db_path() -> str:
+    """Get path to local SQLite database."""
+    return str(Path("pivo.db").absolute())
 
 
 def query_hive(question: str, config: Config) -> dict[str, Any]:
     """
-    Execute a natural language query against Hive.
-    
-    1. Send question + schema to Gemini for SQL generation
-    2. Execute generated SQL against Hive
-    3. Return formatted results
+    Execute a natural language query against the metadata store (SQLite).
     """
     # Step 1: Generate SQL from natural language
     genai.configure(api_key=config.gemini_api_key)
     model = genai.GenerativeModel(config.model)
     
-    sql_prompt = f"""You are a SQL expert. Given the following Hive table schema and a natural language question, 
-generate a valid HiveQL query to answer the question.
+    sql_prompt = f"""You are a SQL expert. Given the following table schema and a natural language question, 
+generate a valid SQLite query to answer the question.
 
 {REPO_SNAPSHOTS_SCHEMA}
 
@@ -51,9 +52,8 @@ Question: {question}
 
 Rules:
 - Return ONLY the SQL query, no explanations
-- Use HiveQL syntax (compatible with Hive 2.3)
+- Use SQLite syntax
 - Limit results to 100 rows maximum unless specified otherwise
-- Use proper date/timestamp comparisons
 
 SQL Query:"""
 
@@ -65,28 +65,20 @@ SQL Query:"""
         lines = sql_query.split("\n")
         sql_query = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
     
-    # Step 2: Execute query against Hive
+    print(f"       ⚙️ SQL Generate: {sql_query}")
+    
+    # Step 2: Execute query against SQLite
     try:
-        conn = hive.connect(
-            host=config.hive_host,
-            port=config.hive_port,
-            username="hive",
-            auth="NOSASL"
-        )
+        conn = sqlite3.connect(get_db_path())
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(sql_query)
         
         # Fetch results
-        columns = [desc[0] for desc in cursor.description] if cursor.description else []
         rows = cursor.fetchall()
+        results = [dict(row) for row in rows]
         
-        cursor.close()
         conn.close()
-        
-        # Format results
-        results = []
-        for row in rows:
-            results.append(dict(zip(columns, row)))
         
         return {
             "success": True,
