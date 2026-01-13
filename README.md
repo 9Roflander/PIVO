@@ -2,7 +2,11 @@
 
 **Python Intelligent Version Orchestrator** - An AI-powered Git backup & metadata assistant built on a Dockerized Hadoop ecosystem.
 
-PIVO lets you ask natural language questions about your Git repositories, compare file versions, and restore to any commit - all powered by Google Gemini.
+## ✨ Key Features
+- **AI-Driven Analytics**: Query repository metadata using natural language (Hive/SQLite).
+- **Time Travel**: View file diffs and content across HDFS snapshots.
+- **Disaster Recovery**: Restore full repository history (all branches/tags) using Git Bundles.
+- **Real-time Auditing**: Track all AI actions and ingestion events via Kafka.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Docker](https://img.shields.io/badge/Docker-Required-blue)
