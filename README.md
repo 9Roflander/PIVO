@@ -89,8 +89,23 @@ docker-compose up -d
 docker-compose ps
 ```
 
-### 4. Run PIVO
+### 4. Start Background Services
 
+Open two new terminal windows and run:
+
+**Terminal 2: Metadata Service** (Listens for Ingestion Events)
+```bash
+python run_metadata_service.py
+```
+
+**Terminal 3: Audit Logger** (Captures Logs to `logs/`)
+```bash
+python run_audit_logger.py
+```
+
+### 5. Run PIVO Agent
+
+**Terminal 1:**
 ```bash
 python main.py
 ```

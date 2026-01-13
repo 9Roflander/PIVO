@@ -5,8 +5,15 @@ import json
 import time
 import random
 from typing import Any
+try:
+    from kafka import KafkaProducer, KafkaConsumer
+except ImportError:
+    KafkaProducer = None
+    KafkaConsumer = None
 import google.generativeai as genai
 from google.api_core import exceptions
+import datetime
+
 
 from .config import Config
 from .tools import TOOLS, TOOL_FUNCTIONS
@@ -56,9 +63,55 @@ class PIVOAgent:
             tools=TOOLS # Using global TOOLS as per original code
         )
         
+        # Initialize Kafka Producer
+        self.producer = None
+        if KafkaProducer:
+            try:
+                self.producer = KafkaProducer(
+                    bootstrap_servers=self.config.kafka_bootstrap_servers
+                )
+            except Exception as e:
+                print(f"[PIVO] Warning: Kafka not available for logging: {e}")
+
         # Discover tracked repositories and activity for context
         self.system_context = self._get_rich_context()
         self.start_chat() # Start the chat session with context
+    
+    def _log_event(self, event_type: str, payload: dict):
+        """Log an event to Kafka."""
+        if not self.producer:
+            return
+            
+        message = {
+            "type": event_type,
+            "timestamp": datetime.datetime.now().isoformat(),
+            **payload
+        }
+        
+        try:
+            self.producer.send('pivo-audit-logs', json.dumps(message).encode('utf-8'))
+        except Exception as e:
+            print(f"[PIVO] Kafka log error: {e}")
+
+    def listen_for_notifications(self):
+        """Yields commit events from Kafka."""
+        if not KafkaConsumer: return
+            
+        try:
+            consumer = KafkaConsumer(
+                'pivo-commit-events',
+                bootstrap_servers=self.config.kafka_bootstrap_servers,
+                # Start from now, don't replay old notifications
+                auto_offset_reset='latest',
+                value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+            )
+            for message in consumer:
+                if message.value.get("event_type") == "COMMIT_INGESTED":
+                    yield message.value
+        except Exception:
+            pass
+
+
         
     def _get_rich_context(self) -> str:
         """
@@ -144,6 +197,9 @@ class PIVOAgent:
             
         # Disable auto-calling to use our manual loop
         self.chat_session = self.model.start_chat(history=history)
+        
+        self._log_event("SESSION_START", {"context": "new_session"})
+
     
     def _execute_tool(self, tool_name: str, tool_input: dict[str, Any]) -> Any:
         """Execute a tool and return its result."""
@@ -153,7 +209,22 @@ class PIVOAgent:
         func = TOOL_FUNCTIONS[tool_name]
         
         # Add config to the tool call
-        return func(**tool_input, config=self.config)
+        result = func(**tool_input, config=self.config)
+        
+        # Extract technical command for logging if present
+        technical_command = None
+        if isinstance(result, dict):
+            technical_command = result.get("command") or result.get("sql_query")
+            
+        self._log_event("TOOL_EXECUTION", {
+            "tool_name": tool_name, 
+            "arguments": tool_input,
+            "command": technical_command,
+            "result_preview": str(result)[:200]
+        })
+        
+        return result
+
     
     def _send_message_with_retry(self, message, max_retries=3):
         """Send message with exponential backoff for rate limits."""
@@ -173,8 +244,11 @@ class PIVOAgent:
         """
         Process a user message and return the agent's response.
         """
+        self._log_event("CHAT_MESSAGE", {"role": "USER", "content": user_message})
+        
         try:
             response = self._send_message_with_retry(user_message)
+
         except exceptions.ResourceExhausted:
             return "[ERROR] API Quota exceeded. Please try again in a minute."
             
@@ -189,12 +263,7 @@ class PIVOAgent:
             
             if not function_calls:
                 # No more function calls, extract text response
-                text_parts = [
-                    part.text 
-                    for part in response.candidates[0].content.parts 
-                    if hasattr(part, 'text')
-                ]
-                return "\n".join(text_parts)
+                break
             
             # Execute each function call
             function_responses = []
@@ -228,7 +297,19 @@ class PIVOAgent:
             for part in response.candidates[0].content.parts 
             if hasattr(part, 'text')
         ]
-        return "\n".join(text_parts) if text_parts else "I completed the task but have no additional response."
+
+        
+        # Log final response text requires buffering or capturing return...
+        # Since we return directly, let's just log "AGENT_RESPONSE" before returning
+        # Note: Ideally we capture the text first.
+        
+        # Refactoring slightly to allow logging:
+        final_text = "\n".join(text_parts) if text_parts else "I completed the task but have no additional response."
+        self._log_event("CHAT_MESSAGE", {"role": "AGENT", "content": final_text})
+        if self.producer:
+            self.producer.flush()
+        return final_text
+
     
     def reset(self):
         """Clear conversation history and restart with context."""

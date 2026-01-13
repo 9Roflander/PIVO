@@ -118,7 +118,8 @@ def submit_restore_job(
             return {
                 "success": True,
                 "message": f"Restore job completed successfully. Repository restored to commit {commit_hash[:7]} and pushed to {target_repo_url}",
-                "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout
+                "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout,
+                "command": " ".join(cmd)
             }
         else:
             return {

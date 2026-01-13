@@ -5,7 +5,13 @@ PIVO - Python Intelligent Version Orchestrator
 Main entry point for the PIVO agent CLI.
 """
 import sys
+import threading
+import queue
 from pivo import PIVOAgent, Config
+
+# Global state for notification synchronization
+IS_LLM_BUSY = False
+NOTIFICATION_QUEUE = queue.Queue()
 
 
 def print_banner():
@@ -27,6 +33,38 @@ def print_banner():
     """
     print(banner)
 
+    print(banner)
+
+
+def start_notification_thread(agent):
+    """Starts a background thread to listen for commit notifications."""
+    def listener():
+        for event in agent.listen_for_notifications():
+            repo = event.get('repo_name', 'Unknown Repo')
+            commit = event.get('commit_hash', '???')[:7]
+            meta = event.get('metadata', {})
+            author = meta.get('author', 'Unknown')
+            msg = meta.get('message', 'No message')
+            
+            
+            message_text = (
+                f"\n\n[🔔] NEW COMMIT DETECTED in {repo}\n"
+                f"    Author: {author}\n"
+                f"    Commit: {commit}\n"
+                f"    Message: {msg}\n"
+                f"{'-' * 40}\n"
+            )
+
+            if IS_LLM_BUSY:
+                # Queue it if LLM is thinking/printing
+                NOTIFICATION_QUEUE.put(message_text)
+            else:
+                # Print immediately if idle
+                print(message_text)
+                print("You: ", end="", flush=True)
+
+    t = threading.Thread(target=listener, daemon=True)
+    t.start()
 
 def main():
     """Main entry point."""
@@ -51,6 +89,9 @@ def main():
     print("-" * 65)
     print()
     
+    # Start background listener
+    start_notification_thread(agent)
+    
     while True:
         try:
             user_input = input("You: ").strip()
@@ -68,8 +109,19 @@ def main():
                 continue
             
             print()
-            response = agent.chat(user_input)
-            print(f"PIVO: {response}")
+            
+            global IS_LLM_BUSY
+            IS_LLM_BUSY = True
+            try:
+                response = agent.chat(user_input)
+                print(f"PIVO: {response}")
+            finally:
+                IS_LLM_BUSY = False
+                
+            # Flush pending notifications
+            while not NOTIFICATION_QUEUE.empty():
+                print(NOTIFICATION_QUEUE.get())
+                
             print()
             
         except KeyboardInterrupt:

@@ -105,7 +105,8 @@ Provide a concise but informative summary:"""
             "deletions": deletions,
             "truncated": truncated,
             "summary": summary,
-            "raw_diff": diff_text if len(diff_text) < 2000 else "[Diff too large to include]"
+            "raw_diff": diff_text if len(diff_text) < 2000 else "[Diff too large to include]",
+            "command": f"docker exec namenode hdfs dfs -cat {file_path_a} (and {file_path_b})"
         }
         
     except Exception as e:

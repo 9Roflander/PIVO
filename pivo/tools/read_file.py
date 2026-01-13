@@ -110,5 +110,6 @@ def get_file_content(
         "repo": repo_name,
         "commit": commit_hash,
         "path": file_path,
-        "content": content
+        "content": content,
+        "command": f"docker exec namenode hdfs dfs -cat .../{file_path}"
     }
