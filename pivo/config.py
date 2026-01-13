@@ -34,9 +34,15 @@ class Config:
         """Load configuration from environment variables."""
         load_dotenv()
         
-        api_key = os.getenv("GEMINI_API_KEY")
+        # Resolve API Key (Prefer GOOGLE_API_KEY for new SDK)
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        
+        # Suppress SDK warning "Both GOOGLE_API_KEY and GEMINI_API_KEY are set"
+        if "GOOGLE_API_KEY" in os.environ and "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+            
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
+            raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY environment variable is required")
         
         return cls(
             gemini_api_key=api_key,

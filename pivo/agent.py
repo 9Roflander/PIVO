@@ -10,7 +10,8 @@ try:
 except ImportError:
     KafkaProducer = None
     KafkaConsumer = None
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.api_core import exceptions
 import datetime
 
@@ -56,12 +57,8 @@ class PIVOAgent:
     
     def __init__(self, config: Config):
         self.config = config
-        # Initialize Gemini
-        genai.configure(api_key=self.config.gemini_api_key)
-        self.model = genai.GenerativeModel(
-            model_name=self.config.model,
-            tools=TOOLS # Using global TOOLS as per original code
-        )
+        # Initialize Gemini Client
+        self.client = genai.Client(api_key=self.config.gemini_api_key)
         
         # Initialize Kafka Producer
         self.producer = None
@@ -176,27 +173,32 @@ class PIVOAgent:
         """Start a new chat session."""
         history = []
         # Inject system prompt
-        history.append({
-            "role": "user",
-            "parts": [SYSTEM_PROMPT]
-        })
-        history.append({
-            "role": "model",
-            "parts": ["Understood. I am PIVO, an AI assistant specialized in managing Git repository backups."]
-        })
+        history.append(types.Content(
+            role="user",
+            parts=[types.Part(text=SYSTEM_PROMPT)]
+        ))
+        history.append(types.Content(
+            role="model",
+            parts=[types.Part(text="Understood. I am PIVO, an AI assistant specialized in managing Git repository backups.")]
+        ))
 
         if self.system_context:
-            history.append({
-                "role": "user",
-                "parts": [self.system_context]
-            })
-            history.append({
-                "role": "model",
-                "parts": ["Understood. I have updated my context with the tracked repositories and recent activity."]
-            })
+            history.append(types.Content(
+                role="user",
+                parts=[types.Part(text=self.system_context)]
+            ))
+            history.append(types.Content(
+                role="model",
+                parts=[types.Part(text="Understood. I have updated my context with the tracked repositories and recent activity.")]
+            ))
             
         # Disable auto-calling to use our manual loop
-        self.chat_session = self.model.start_chat(history=history)
+        # Note: In new SDK, we pass tools in config
+        self.chat_session = self.client.chats.create(
+            model=self.config.model,
+            config=types.GenerateContentConfig(tools=TOOLS),
+            history=history
+        )
         
         self._log_event("SESSION_START", {"context": "new_session"})
 
@@ -258,7 +260,7 @@ class PIVOAgent:
             function_calls = [
                 part.function_call 
                 for part in response.candidates[0].content.parts 
-                if hasattr(part, 'function_call') and part.function_call.name
+                if part.function_call and part.function_call.name
             ]
             
             if not function_calls:
@@ -277,8 +279,8 @@ class PIVOAgent:
                 result = self._execute_tool(tool_name, tool_args)
                 
                 function_responses.append(
-                    genai.protos.Part(
-                        function_response=genai.protos.FunctionResponse(
+                    types.Part(
+                        function_response=types.FunctionResponse(
                             name=tool_name,
                             response={"result": json.dumps(result, default=str)}
                         )
@@ -295,7 +297,7 @@ class PIVOAgent:
         text_parts = [
             part.text 
             for part in response.candidates[0].content.parts 
-            if hasattr(part, 'text')
+            if part.text
         ]
 
         

@@ -1,7 +1,7 @@
 # PIVO Dependencies
 
 # Google Gemini API
-google-generativeai>=0.8.0
+google-genai>=0.1.0
 
 # Hive connectivity (without native SASL - using NOSASL mode)
 pyhive>=0.7.0

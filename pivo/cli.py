@@ -33,8 +33,6 @@ def print_banner():
     """
     print(banner)
 
-    print(banner)
-
 
 def start_notification_thread(agent):
     """Starts a background thread to listen for commit notifications."""

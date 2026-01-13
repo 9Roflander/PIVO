@@ -3,7 +3,7 @@
 PIVO Ingest - Import GitHub repositories into HDFS and Hive
 
 Usage:
-    python ingest.py --repo https://github.com/user/repo [OPTIONS]
+    python -m pivo.ingest.cli --repo https://github.com/user/repo [OPTIONS]
 
 Options:
     --repo URL          GitHub repository URL (required)

@@ -12,7 +12,7 @@ from ..config import Config
 # Claude Tool Definition
 RESTORE_TOOL = {
     "name": "submit_restore_job",
-    "description": "Restore a repository to a specific commit state and push it to a new GitHub location. This triggers a Spark job that reads the snapshot from HDFS and pushes to the target repository.",
+    "description": "Restore a repository to a specific commit state and push it to a new GitHub location. This triggers a Spark job that reads the snapshot from HDFS and pushes to the target repository. CRITICAL: The target GitHub repository MUST be completely empty (no branches/tags), otherwise the operation will fail.",
     "input_schema": {
         "type": "object",
         "properties": {

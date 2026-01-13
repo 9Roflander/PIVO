@@ -5,7 +5,6 @@ Consumes events from Kafka (pivo-audit-logs) and writes them to
 structured log files for user transparency.
 """
 import json
-import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -79,7 +78,6 @@ def process_event(event: dict):
         if command:
              append_to_log(CHAT_LOG, f"   ↳ CMD: {command}")
 
-
     elif event_type == "COMMIT_INGESTED":
         repo = event.get("repo_name", "UNKNOWN")
         commit = event.get("commit_hash", "UNKNOWN")
@@ -98,8 +96,15 @@ def process_event(event: dict):
 
 def main():
     setup_directories()
-    config = Config.from_env()
+    # Ensure CWD is project root or handle paths carefully
+    # Assuming run from root via python -m pivo.services.audit_logger
     
+    try:
+        config = Config.from_env()
+    except Exception as e:
+        print(f"[ERROR] Loading config: {e}")
+        return
+
     print(f"[*] Starting Audit Logger...")
     print(f"[*] Connected into Kafka: {config.kafka_bootstrap_servers}")
     print(f"[*] Logs will be written to: {LOG_DIR.absolute()}")
@@ -108,7 +113,6 @@ def main():
     try:
         consumer = KafkaConsumer(
             'pivo-audit-logs', 'pivo-commit-events',
-
             bootstrap_servers=config.kafka_bootstrap_servers,
             auto_offset_reset='earliest',
             enable_auto_commit=True,

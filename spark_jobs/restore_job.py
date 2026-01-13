@@ -85,10 +85,10 @@ def push_to_github(local_dir: Path, target_url: str, api_key: str) -> bool:
     Initialize git repo and push to target GitHub URL.
     
     The API key is used for authentication via HTTPS.
+    CRITICAL: Only pushes if the remote repository is completely empty.
     """
     try:
         # Construct authenticated URL
-        # Convert https://github.com/user/repo to https://<token>@github.com/user/repo
         if target_url.startswith("https://github.com/"):
             auth_url = target_url.replace(
                 "https://github.com/",
@@ -97,6 +97,29 @@ def push_to_github(local_dir: Path, target_url: str, api_key: str) -> bool:
         else:
             print(f"[ERROR] Unsupported URL format: {target_url}")
             return False
+            
+        print(f"[INFO] Checking if target repository is empty: {target_url}")
+        
+        # Check if remote repository has any references (branches/tags)
+        # git ls-remote returns exit code 0 and empty output if repo is empty but exists
+        # It returns refs if not empty
+        ls_remote_result = subprocess.run(
+            ["git", "ls-remote", auth_url],
+            capture_output=True,
+            text=True
+        )
+        
+        if ls_remote_result.returncode != 0:
+            # Could be auth error or repo invalid
+            print(f"[ERROR] Failed to check remote repository: {ls_remote_result.stderr}")
+            return False
+            
+        if ls_remote_result.stdout.strip():
+            print(f"[ERROR] Target repository is NOT empty. Restoration aborted to prevent overwriting existing history.")
+            print(f"       Found existing references: \n{ls_remote_result.stdout[:200]}...")
+            return False
+            
+        print("[INFO] Target repository is empty. Proceeding with restore.")
         
         os.chdir(local_dir)
         
@@ -117,20 +140,12 @@ def push_to_github(local_dir: Path, target_url: str, api_key: str) -> bool:
             capture_output=True  # May fail if already exists
         )
         
-        # Force push to target (with lease for safety)
+        # Push to main
         result = subprocess.run(
-            ["git", "push", "-u", "origin", "main", "--force-with-lease"],
+            ["git", "push", "-u", "origin", "main"],
             capture_output=True,
             text=True
         )
-        
-        if result.returncode != 0:
-            # Try with master branch
-            result = subprocess.run(
-                ["git", "push", "-u", "origin", "master", "--force-with-lease"],
-                capture_output=True,
-                text=True
-            )
         
         if result.returncode == 0:
             print(f"[INFO] Successfully pushed to {target_url}")

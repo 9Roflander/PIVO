@@ -68,6 +68,14 @@ def clone_repo(
     
     # Checkout specific commit if provided
     if commit_hash:
+        # Fetch key commit directly to ensure we have it (handling non-default branches)
+        # Note: GitHub allows fetching by sha1
+        subprocess.run(
+            ["git", "fetch", "origin", commit_hash],
+            cwd=target_dir,
+            capture_output=True
+        )
+
         result = subprocess.run(
             ["git", "checkout", commit_hash],
             cwd=target_dir,

@@ -4,7 +4,7 @@ Tool A: Query Hive - Text-to-SQL for metadata queries using Gemini
 """
 import sqlite3
 from typing import Any
-import google.generativeai as genai
+from google import genai
 from pathlib import Path
 
 from ..config import Config
@@ -40,8 +40,7 @@ def query_hive(question: str, config: Config) -> dict[str, Any]:
     Execute a natural language query against the metadata store (SQLite).
     """
     # Step 1: Generate SQL from natural language
-    genai.configure(api_key=config.gemini_api_key)
-    model = genai.GenerativeModel(config.model)
+    client = genai.Client(api_key=config.gemini_api_key)
     
     sql_prompt = f"""You are a SQL expert. Given the following table schema and a natural language question, 
 generate a valid SQLite query to answer the question.
@@ -57,7 +56,10 @@ Rules:
 
 SQL Query:"""
 
-    response = model.generate_content(sql_prompt)
+    response = client.models.generate_content(
+        model=config.model,
+        contents=sql_prompt
+    )
     sql_query = response.text.strip()
     
     # Remove markdown code blocks if present

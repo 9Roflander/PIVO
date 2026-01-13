@@ -2,12 +2,8 @@
 PIVO Metadata Service
 Listens to Kafka events for new HDFS backups and updates the Metadata Catalog (SQLite).
 """
-import sys
 import time
 from pathlib import Path
-
-# Add project root to path
-sys.path.append(str(Path(__file__).parent.absolute()))
 
 from pivo.config import Config
 from pivo.ingest.kafka_service import PivoKafkaConsumer

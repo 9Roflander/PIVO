@@ -4,7 +4,7 @@ Tool B: File Diff - Smart comparison of file versions in HDFS using Gemini
 import difflib
 import subprocess
 from typing import Any
-import google.generativeai as genai
+from google import genai
 
 from ..config import Config
 
@@ -73,8 +73,7 @@ def get_file_diff(
             truncated = True
         
         # Step 3: Send diff to Gemini for explanation
-        genai.configure(api_key=config.gemini_api_key)
-        model = genai.GenerativeModel(config.model)
+        client = genai.Client(api_key=config.gemini_api_key)
         
         explain_prompt = f"""Analyze this code diff and explain the changes in plain English.
 Focus on:
@@ -91,7 +90,10 @@ Diff:
 
 Provide a concise but informative summary:"""
 
-        response = model.generate_content(explain_prompt)
+        response = client.models.generate_content(
+            model=config.model,
+            contents=explain_prompt
+        )
         summary = response.text.strip()
         
         # Count changes

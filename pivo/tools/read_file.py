@@ -3,7 +3,7 @@ Tool C: Read File - Read full content of a file from HDFS
 """
 import subprocess
 from typing import Any, Optional
-import google.generativeai as genai
+
 
 from ..config import Config
 from .query_hive import query_hive
