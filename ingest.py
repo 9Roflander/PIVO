@@ -73,8 +73,14 @@ def ingest_single_commit(
         
         # Step 4: Catalog in Hive
         print("[4/4] Cataloging in Hive...")
-        create_table(config)
-        insert_snapshot(metadata, hdfs_path, config)
+        try:
+            create_table(config)
+            if insert_snapshot(metadata, hdfs_path, config):
+                print(f"      Successfully cataloged in Hive")
+            else:
+                print(f"      [WARN] Failed to insert into Hive (HDFS backup is safe)")
+        except Exception as e:
+            print(f"      [WARN] Hive cataloging skipped: {e} (HDFS backup is safe)")
         
         print(f"\n✅ Successfully backed up {metadata.repo_name}@{metadata.commit_hash[:7]}")
         print(f"   HDFS: {hdfs_path}")
@@ -150,8 +156,13 @@ def main():
                 metadata.commit_hash,
                 config
             )
-            create_table(config)
-            insert_snapshot(metadata, hdfs_path, config)
+            
+            try:
+                create_table(config)
+                insert_snapshot(metadata, hdfs_path, config)
+            except Exception as e:
+                print(f"      [WARN] Hive cataloging skipped: {e}")
+            
             success_count += 1
         
         shutil.rmtree(local_path, ignore_errors=True)

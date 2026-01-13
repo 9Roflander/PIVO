@@ -70,7 +70,8 @@ SQL Query:"""
         conn = hive.connect(
             host=config.hive_host,
             port=config.hive_port,
-            username="hive"
+            username="hive",
+            auth="NOSASL"
         )
         cursor = conn.cursor()
         cursor.execute(sql_query)
