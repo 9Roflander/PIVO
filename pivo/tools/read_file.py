@@ -74,15 +74,23 @@ def get_file_content(
         import sqlite3
         try:
             conn = sqlite3.connect("pivo.db")
-            cursor = conn.execute(
-                "SELECT hdfs_path FROM repo_snapshots WHERE commit_hash = ?",
-                (commit_hash,)
-            )
+            # Support both full and abbreviated commit hashes
+            if len(commit_hash) < 40:
+                cursor = conn.execute(
+                    "SELECT hdfs_path, commit_hash FROM repo_snapshots WHERE commit_hash LIKE ?",
+                    (commit_hash + "%",)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT hdfs_path, commit_hash FROM repo_snapshots WHERE commit_hash = ?",
+                    (commit_hash,)
+                )
             row = cursor.fetchone()
             conn.close()
             
             if row:
                 base_hdfs_path = row[0]
+                commit_hash = row[1]  # Use the full hash
             else:
                  return {"success": False, "error": f"Commit '{commit_hash}' not found in catalog"}
         except Exception:

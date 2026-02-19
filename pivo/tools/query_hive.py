@@ -1,10 +1,10 @@
 """
-Tool A: Query Hive - Text-to-SQL for metadata queries using Gemini
+Tool A: Query Hive - Text-to-SQL for metadata queries using Anthropic Claude
 (Switched to SQLite backend for reliability)
 """
 import sqlite3
 from typing import Any
-from google import genai
+import anthropic
 from pathlib import Path
 
 from ..config import Config
@@ -13,7 +13,7 @@ from ..config import Config
 REPO_SNAPSHOTS_SCHEMA = """
 Table: repo_snapshots
 Columns:
-  - commit_hash: TEXT (PRIMARY KEY) - Git commit SHA
+  - commit_hash: TEXT (PRIMARY KEY) - Full 40-character Git commit SHA (use LIKE 'prefix%' for short hashes)
   - repo_name: TEXT - Name of the repository
   - author: TEXT - Commit author name
   - author_email: TEXT - Commit author email
@@ -40,7 +40,7 @@ def query_hive(question: str, config: Config) -> dict[str, Any]:
     Execute a natural language query against the metadata store (SQLite).
     """
     # Step 1: Generate SQL from natural language
-    client = genai.Client(api_key=config.gemini_api_key)
+    client = anthropic.Anthropic(api_key=config.anthropic_api_key)
     
     sql_prompt = f"""You are a SQL expert. Given the following table schema and a natural language question, 
 generate a valid SQLite query to answer the question.
@@ -53,14 +53,16 @@ Rules:
 - Return ONLY the SQL query, no explanations
 - Use SQLite syntax
 - Limit results to 100 rows maximum unless specified otherwise
+- IMPORTANT: Commit hashes are stored as full 40-character SHA strings. If the user provides a SHORT/abbreviated hash (e.g. '2cc2dd9'), you MUST use LIKE 'hash%' instead of = 'hash'. For example: WHERE commit_hash LIKE '2cc2dd9%'
 
 SQL Query:"""
 
-    response = client.models.generate_content(
+    response = client.messages.create(
         model=config.model,
-        contents=sql_prompt
+        max_tokens=1024,
+        messages=[{"role": "user", "content": sql_prompt}]
     )
-    sql_query = response.text.strip()
+    sql_query = response.content[0].text.strip()
     
     # Remove markdown code blocks if present
     if sql_query.startswith("```"):
